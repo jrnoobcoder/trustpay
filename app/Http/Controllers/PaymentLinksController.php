@@ -1,0 +1,229 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\PaymentLinks;
+use App\Models\User;
+use Stripe\Stripe;
+use Stripe\PaymentIntent;
+use Validator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Auth;
+use Stripe\Exception\SignatureVerificationException;
+use Stripe\Webhook;
+
+class PaymentLinksController extends Controller
+{
+    //
+	public function createPaymentLink(Request $request)
+{
+    // $request->validate([
+        // 'customer_name' => 'required|string',
+        // 'customer_email' => 'required|string|email',
+        // 'customer_phone' => 'required',
+        // 'amount' => 'required|numeric|min:0',
+        // 'currency' => 'required|in:usd,eur', // Adjust as per your needs
+    // ]);
+	
+	$validator = Validator::make($request->all(), [
+		'customer_name' => 'required|string',
+        'customer_email' => 'required|string|email',
+        'customer_phone' => 'required',
+        'amount' => 'required|numeric|min:0',
+        'currency' => 'required|in:usd,eur',
+	]);
+	
+	if ($validator->fails()) {
+		return response()->json([ 'response' => ['errors' => $validator->errors(), 'message' => "All fields are required"]], 400);
+	}
+
+    \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+    /*$paymentIntent = \Stripe\PaymentIntent::create([
+        'amount' => $request->input('amount') * 100, // Amount in cents
+        'currency' => $request->input('currency'),
+        'payment_method_types' => ['card'],
+        'description' => 'Payment for ' . $request->input('customer_name'),
+        'capture_method' => 'automatic',
+    ]);*/
+
+    // Generate Stripe Checkout session
+	$pid = $this->generatePaymentId(10);
+    $checkout_session = \Stripe\Checkout\Session::create([
+		'customer_email' => $request->input('customer_email'),
+        'payment_method_types' => ['card'],
+        'line_items' => [[
+            'price_data' => [
+                'currency' => $request->input('currency'),
+                'product_data' => [
+                    'name' => 'Complete the payment',
+                ],
+                'unit_amount' => $request->input('amount') * 100, // Amount in cents
+            ],
+            'quantity' => 1,
+        ]],
+        'mode' => 'payment',
+        'success_url' => route('payment.success') . '?session_id={CHECKOUT_SESSION_ID}',
+        'cancel_url' => route('payment.cancel'),
+        'metadata' => ['payment_id' => $pid],
+    ]);
+	 //dd($checkout_session );
+	if(!empty($checkout_session)){
+    // Save payment link details to database
+		$paymentLink = new PaymentLinks();
+		$paymentLink->agent_id = 4;
+		$paymentLink->customer_name = $request->input('customer_name');
+		$paymentLink->customer_email = $request->input('customer_email');
+		$paymentLink->customer_phone = $request->input('customer_phone');
+		$paymentLink->amount = $request->input('amount');
+		$paymentLink->currency = $request->input('currency');
+		$paymentLink->description = 'Payment for ' . $request->input('customer_name');
+		$paymentLink->payment_link = $checkout_session->url;
+		$paymentLink->client_secret = $checkout_session->client_secret;
+		$paymentLink->payment_intent_id = $checkout_session->payment_intent_id;
+		$paymentLink->payment_status = "pending";
+		$paymentLink->payment_id = $pid;
+		$paymentLink->save();
+ 
+		// Return response with client_secret and payment link
+		return response()->json([
+			'client_secret' => $checkout_session->client_secret,
+			'payment_intent_id' => $checkout_session->payment_intent_id,
+			'payment_url' => $checkout_session->url,
+			'payment_id' => $pid,
+		]);
+	}else{
+		return response()->json(['response' => [ 'status' => false, 'message' => "Somthing went wrong, Please try letter" ]]);
+	}
+}
+ 
+	
+	
+	public function paymentSuccess(Request $request)
+	{
+		$session_id = $request->query('session_id'); // Retrieve session_id from query parameters
+
+		if (!$session_id) {
+			return response()->json(['error' => 'Session ID is missing'], 400);
+		}
+
+		\Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+		try {
+			$session = \Stripe\Checkout\Session::retrieve($session_id);
+			$payment_intent_id = $session->payment_intent;
+			$payment_id = $session->metadata->payment_id;
+			$payment_status = $session->payment_status;
+			$createdTimestamp = $session->created;
+			$expiresAtTimestamp = $session->expires_at;
+			
+			$createdDate = date('Y-m-d H:i:s', $createdTimestamp);
+			$expiresAtDate = date('Y-m-d H:i:s', $expiresAtTimestamp);
+			
+			$paymentLink = PaymentLinks::where('payment_id', $payment_id)->first();
+			if ($paymentLink) {
+				$paymentLink->payment_intent_id = $payment_intent_id;
+				$paymentLink->payment_status = $payment_status;
+				$paymentLink->save();
+			}
+
+			// Return response with payment status and details
+			return response()->json([ 
+				'response' => [
+					'id' => $paymentLink->id,
+					'agent_id' =>$paymentLink->agent_id, 
+					'customer_name' =>$paymentLink->customer_name, 
+					'customer_email' =>$paymentLink->customer_email, 
+					'customer_phone' =>$paymentLink->customer_phone, 
+					'payment_status' => $payment_status, 
+					'payment_id' => $payment_id, 
+					'created' => $createdDate, 
+					'expires_at' => $expiresAtDate, 
+					'status' => true, 
+					]
+				]);
+
+		} catch (\Stripe\Exception\ApiErrorException $e) {
+			return response()->json(['error' => $e->getMessage()], 500);
+		}
+	}
+
+
+
+
+
+
+	
+	public function paymentCancel(Request $req){
+		return response()->json(['status' => 'cancel', 'response' => $req ]);
+	}
+	
+	public function generatePaymentId($length = 8) {
+		$characters = '0123456789';
+		//$characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+		$charactersLength = strlen($characters);
+		$randomString = '';
+		
+		for ($i = 0; $i < $length; $i++) {
+			$randomString .= $characters[mt_rand(0, $charactersLength - 1)];
+		}
+		
+		return $randomString;
+	}
+	
+	
+	
+	/**
+     * Handle incoming webhook from Stripe.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function handleWebhook(Request $request)
+    {
+        // Retrieve the request's body and parse it as JSON
+        $payload = $request->getContent();
+
+        // You can obtain the Stripe signature from the headers
+        $sig_header = $request->header('Stripe-Signature');
+
+        // Your webhook secret key
+        $endpoint_secret = config('services.stripe.webhook_secret');
+
+        try {
+            // Verify the webhook signature
+            $event = Webhook::constructEvent($payload, $sig_header, $endpoint_secret);
+
+            // Handle the event
+            switch ($event->type) {
+                case 'checkout.session.completed':
+                    $session = $event->data->object;
+                    // Handle completed checkout session
+                    break;
+                case 'payment_intent.succeeded':
+                    $paymentIntent = $event->data->object;
+                    // Handle successful payment intent
+                    break;
+                case 'payment_intent.payment_failed':
+                    $paymentIntent = $event->data->object;
+                    // Handle failed payment intent
+                    break;
+                // Add other event handlers as needed
+
+                default:
+                    // Unexpected event type
+                    return response()->json(['error' => 'Unhandled event type'], 400);
+            }
+
+            // Return a response indicating success
+            return response()->json(['success' => true]);
+
+        } catch (SignatureVerificationException $e) {
+            // Invalid signature
+            return response()->json(['error' => 'Webhook signature verification failed'], 400);
+        }
+    }
+
+}
