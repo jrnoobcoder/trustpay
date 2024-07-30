@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fetch API Example</title>
+	<link href="https://fonts.googleapis.com/css?family=Nunito:200,600" rel="stylesheet">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" integrity="sha512-jnSuA4Ss2PkkikSOLtYs8BlYIeeIK1h99ty4YfvRPAlzr377vr3CXDb7sb7eEEBYjDtcYj+AjBH3FLv5uSJuXg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+</head>
+<body>
+
+@php 
+echo "<pre>";
+ print_r($intent);
+ echo "</pre>";
+@endphp
+  <!-- resources/views/payment/form.blade.php -->
+<div class="container">
+@if (session('success_message'))
+    <div class="alert alert-success">
+        {{ session('success_message') }}
+    </div>
+@endif
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">Payment Form</div>
+                    <div class="card-body">
+                        <form id="payment-form" action="{{ route('payment.process') }}" method="POST">
+                            @csrf
+							<input type="hidden" name="payment_intent_id" value="{{ $intent->id }}">
+							
+                            <div class="form-group">
+                                <label for="card-element">
+                                    Credit or debit card
+                                </label>
+                                <div id="card-element">
+                                    <!-- A Stripe Element will be inserted here. -->
+                                </div>
+                                <!-- Used to display form errors. -->
+                                <div id="card-errors" role="alert"></div>
+                            </div>
+                            <button id="card-button" class="btn btn-primary" type="submit" data-secret="{{ $intent->client_secret }}">
+                                Pay Now
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://js.stripe.com/v3/"></script>
+    <script>
+        // Set up Stripe.js and Elements to use in checkout form
+        const stripe = Stripe('{{ env('STRIPE_KEY') }}');
+        const elements = stripe.elements();
+console.log(stripe);
+        // Create an instance of the card Element.
+        const cardElement = elements.create('card');
+console.log(cardElement);
+        // Add an instance of the card Element into the `card-element` div.
+        cardElement.mount('#card-element');
+
+        // Handle real-time validation errors from the card Element.
+        cardElement.addEventListener('change', function(event) {
+            const cardErrors = document.getElementById('card-errors');
+            if (event.error) {
+                cardErrors.textContent = event.error.message;
+            } else {
+                cardErrors.textContent = '';
+            }
+        });
+
+        // Handle form submission.
+        const form = document.getElementById('payment-form');
+        const cardButton = document.getElementById('card-button');
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            cardButton.disabled = true;
+
+            const { paymentIntent, error } = await stripe.confirmCardPayment(
+                cardButton.dataset.secret, {
+                    payment_method: {
+                        card: cardElement,
+                    }
+                }
+            );
+
+            if (error) {
+                // Display error.message in your UI
+                cardErrors.textContent = error.message;
+                cardButton.disabled = false;
+            } else {
+                // Form submission was successful, charge the user
+                form.submit();
+            }
+        });
+    </script>
+</body>
+</html>
