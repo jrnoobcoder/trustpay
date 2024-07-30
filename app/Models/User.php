@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
-
+use Illuminate\Support\Facades\Storage;
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
@@ -24,6 +24,8 @@ class User extends Authenticatable
         'role',
         'added_by',
         'phone',
+		'user_status', 
+		'status'
     ];
 
     /**
@@ -46,11 +48,28 @@ class User extends Authenticatable
         'password' => 'hashed',
 	    'role' => 'string',
     ];
-	
+	protected $appends = ['profile_image_url'];
 	
 	
 	public function addedByAdmin()
     {
         return $this->belongsTo(Agent::class, 'added_by_admin_id');
+    }
+	
+	
+
+    public function getProfileImageUrlAttribute()
+    {
+        return $this->profile_image ? Storage::url($this->profile_image) : null;
+    }
+	
+	public static function getNameByAgentId($agentId)
+    {
+        return self::where('id', $agentId)->value('name') ?? 'User not found';
+    }
+	
+	public static function getAgentCountByAdmin($adminId)
+    {
+        return self::where('role', 'agent')->where('added_by')->count();
     }
 }

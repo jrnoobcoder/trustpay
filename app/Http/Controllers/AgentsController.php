@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 //use App\Models\Agent;
+use App\Models\PaymentLinks;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Validator; 
@@ -34,7 +35,9 @@ class AgentsController extends Controller
 				$agentResponse = [
 					'agents' => $agents,
 					'status' => true,
-					'total_count' => $totalCount,
+					'agents_count' => $totalCount,
+					'total_customer' => PaymentLinks::getCustomerCount(Auth::id()),
+					'total_collection' => PaymentLinks::getCollection(Auth::id())
 				];
 				return response()->json(['response' => $agentResponse], 201);
 			}else{
@@ -120,10 +123,12 @@ class AgentsController extends Controller
 	public function register(Request $request)
     {
 		$user = DB::table('users')
-					->where('id', Auth::id())
-					->where('role', 'superadmin')
-					->orWhere('role', 'admin')
-					->first();
+			->where('id', Auth::id())
+			->where(function ($query) {
+				$query->where('role', 'superadmin')
+					  ->orWhere('role', 'admin');
+			})
+			->first();
 					
 		if($user){
 			$validator = Validator::make($request->all(), [
@@ -163,49 +168,84 @@ class AgentsController extends Controller
 		}else{
 			return response()->json(['error'=>'Unauthenticated']);
 		}
-    } 
-	 
-	/*Depricated*/
-    public function registerAgent(Request $request)
-    {
-		$user = DB::table('users')
-					->where('id', Auth::id())
-					->where('role', 'superadmin')
-					->orWhere('role', 'admin')
-					->first();
-					
-		if($user){
-			$request->validate([
-				'name' => 'required|string',
-				'email'=>'required|string|unique:agents',
-				'phone'=>'required',
-				'password'=>'required|string',
-				'c_password' => 'required|same:password'
-			]);
-		
-			$agent = new Agent([
-				'name'  => $request->name,
-				'email' => $request->email,
-				'phone' => $request->phone,
-				'password' => bcrypt($request->password),
-				'added_by_admin_id' => Auth::id(),
-			]);
+    }
 
-			if($agent->save()){
-				//$tokenResult = $user->createToken('apitoken');
-				//$token = $tokenResult->plainTextToken;
-				$agentResponse = $agent->only(['id', 'name', 'email', 'phone', 'created_at', 'status']);
-				return response()->json(['message' => 'Agent registered successfully', 'agent' => $agentResponse], 201);
+	/**
+     * Login Agent and create token
+     *
+     * @param  [string] email
+     * @param  [string] password
+     * @param  [boolean] remember_me
+     */
+	public function updateAgent(Request $request,$id){
+		$user = DB::table('users')
+			->where('id', Auth::id())
+			->where(function ($query) {
+				$query->where('role', 'superadmin')
+					  ->orWhere('role', 'admin');
+			})
+			->first();
+		if($user){
+		
+			$validator = Validator::make($request->all(), [
+				'name' => 'sometimes|required|string',
+				'email' => 'sometimes|required|string|email|unique:users,email,' . $id,
+				'phone' => 'sometimes|required|string|unique:users,phone,' . $id,
+				//'role' => 'sometimes|required|string|in:agent,admin,superadmin',
+				'user_status' => 'sometimes|required|string|in:active,inactive',
+				'password' => 'nullable|string',
+				//'added_by' => 'sometimes|required|exists:users,id',
+			]); 
+			if ($validator->fails()) {
+				return response()->json(['error' => $validator->errors()], 400);
 			}
-			else{
-				return response()->json(['error'=>'Provide proper details']);
+			
+			$user = User::find($id);
+			if (!$user) {
+				return response()->json(['error' => 'User not found'], 404);
+			}
+			$fieldsToUpdate = []; 
+			if ($request->has('name') && $request->filled('name')) {
+				$fieldsToUpdate['name'] = $request->input('name');
+			}
+			if ($request->has('email') && $request->filled('email')) {
+				$fieldsToUpdate['email'] = $request->input('email');
+			}
+			if ($request->has('phone') && $request->filled('phone')) {
+				$fieldsToUpdate['phone'] = $request->input('phone');
+			}
+			if ($request->has('status') && $request->filled('status')) {
+				$fieldsToUpdate['status'] = $request->input('status');
+			}
+			if ($request->has('password') && $request->filled('password')) {
+				$fieldsToUpdate['password'] = bcrypt($request->input('password'));
+			}
+			if ($request->has('user_status') && $request->filled('user_status')) {
+				$status = $request->input('user_status');
+				if (!in_array($status, ['active', 'inactive'])) {
+					return response()->json(['error' => 'Invalid user status'], 400);
+				}
+				$fieldsToUpdate['user_status'] = $status;
+			}
+
+			try {
+				$user->update($fieldsToUpdate);
+
+				return response()->json(['response' => ['status' => true, 'message' => 'Agent updated successfully', 'user' => $user]]);
+			} catch (ModelNotFoundException $e) {
+				return response()->json(['error' => 'User not found'], 404);
+			} catch (\Exception $e) {
+				return response()->json(['error' => $e->getMessage()], 500);
 			}
 		}else{
-			return response()->json(['error'=>'Unauthenticated']);
+			return response()->json(['response' => ['status' => false, 'message' => 'You are not authorized']]);
 		}
-    }
+	} 
+	 
 	
-	
+	 
+	 
+	 
 	/**
      * Login Agent and create token
      *

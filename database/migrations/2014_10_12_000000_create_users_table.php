@@ -19,6 +19,7 @@ return new class extends Migration
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
 			$table->enum('role', ['superadmin', 'admin', 'agent'])->default('agent');
+			$table->enum('user_status', ['active', 'inactive'])->default('active');
             $table->boolean('status')->default(1);
 			$table->unsignedBigInteger('added_by')->nullable();
 			$table->foreign('added_by')->references('id')->on('users')->onDelete('set null');
