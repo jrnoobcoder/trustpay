@@ -4,9 +4,13 @@ namespace App\Console;
 
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
-
+use App\Console\Commands\SeedUser;
 class Kernel extends ConsoleKernel
 {
+	protected $commands = [
+    
+		SeedUser::class,
+	];
     /**
      * Define the application's command schedule.
      */

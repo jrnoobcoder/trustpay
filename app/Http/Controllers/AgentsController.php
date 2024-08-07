@@ -135,7 +135,7 @@ class AgentsController extends Controller
 				'name' => 'required|string',
 				'email' => 'required|string|unique:users',
 				'phone' => 'required|string|unique:users',
-				'password' => 'required|string',
+				'password' => 'required|string|min:8',
 				'c_password' => 'required|same:password'
 			]);
 			if ($validator->fails()) {
@@ -193,7 +193,7 @@ class AgentsController extends Controller
 				'phone' => 'sometimes|required|string|unique:users,phone,' . $id,
 				//'role' => 'sometimes|required|string|in:agent,admin,superadmin',
 				'user_status' => 'sometimes|required|string|in:active,inactive',
-				'password' => 'nullable|string',
+				'password' => 'nullable|string|min:8',
 				//'added_by' => 'sometimes|required|exists:users,id',
 			]); 
 			if ($validator->fails()) {

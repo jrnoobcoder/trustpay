@@ -398,12 +398,16 @@ class AuthController extends Controller
 			$validator = Validator::make($request->all(), [
 				'name' => 'sometimes|required|string',
 				'email' => 'sometimes|required|string|email|unique:users,email,' . $id,
-				'phone' => 'sometimes|required|string|unique:users,phone,' . $id,
-				'password' => 'sometimes|required|string',
+				'phone' => 'sometimes|required|string|unique:users,phone,' . $id .'|regex:/^(\+\d{1,3}[- ]?)?\d{10}$/',
+				'password' => 'sometimes|required|string|min:8',
 			]);
-			if ($validator->fails()) {
+			/* if ($validator->fails()) {
 				return response()->json(['error' => $validator->errors()], 400);
-			} 
+			} */ 
+			
+			if ($validator->fails()) {
+				return response()->json(['response' => ['message' => $validator->errors()]], 400);
+			}
 			// Find the user by ID
 			$user = User::findOrFail($id);
 

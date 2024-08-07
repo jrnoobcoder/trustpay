@@ -67,7 +67,7 @@ class PaymentLinksController extends Controller
 			->where('id', Auth::id())
 			->first();
         $validated = $request->validate([
-            'range' => 'string|in:previous_month,this_month,this_week,yesterday,today,custom',
+            //'range' => 'string|in:previous_month,this_month,weekly,yesterday,today,custom',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
         ]);
@@ -75,19 +75,19 @@ class PaymentLinksController extends Controller
 		$perPage = $request->get('per_page', 10);
 		$query = PaymentLinks::select('id','agent_id','customer_name','customer_email','customer_phone','amount','currency','description','payment_link','payment_id','payment_status','created_at','updated_at');
 		$startDate = $endDate = null;
-		if ($request->range == "today") {
+		if ($request->has('today')) {
 			$query->whereDate('created_at', [Carbon::now()->startOfDay(), Carbon::now()->endOfDay()]);
-		} elseif ($request->range == "yesterday") {
+		} elseif ($request->has('yesterday')) {
 			$query->whereDate('created_at', [Carbon::now()->subDay()->startOfDay(), Carbon::now()->subDay()->endOfDay()]);
-		} elseif ($request->range == "this_week") {
+		} elseif ($request->has('weekly')) {
 			$query->whereBetween('created_at', [Carbon::now()->startOfWeek(), Carbon::now()->endOfWeek()->endOfDay()]);
-		} elseif ($request->range == "this_month") {
+		} elseif ($request->has('this_month')) {
 			$query->whereYear('created_at', Carbon::now()->year)
 				  ->whereMonth('created_at', [Carbon::now()->startOfMonth(), Carbon::now()->endOfMonth()->endOfDay()]);
-		}elseif ($request->range == "previous_month") {
+		}elseif ($request->has('previous_month')) {
 			$query->whereYear('created_at', Carbon::now()->year)
 				  ->whereMonth('created_at', [Carbon::now()->subMonth()->startOfMonth(), Carbon::now()->subMonth()->endOfMonth()->endOfDay()]);
-		}elseif ($request->range == "custom" && isset($validated['start_date']) && isset($validated['end_date'])) {
+		}elseif ($request->has('custom') && isset($validated['start_date']) && isset($validated['end_date'])) {
 			$query->whereBetween('created_at', [Carbon::parse($validated['start_date'])->startOfDay(), Carbon::parse($validated['end_date'])->endOfDay()]);
 			
 		}
@@ -347,7 +347,7 @@ class PaymentLinksController extends Controller
 		\Stripe\Stripe::setApiKey(env('STRIPE_SECRET'));
 		try {
 			$paymentIntent = \Stripe\PaymentIntent::retrieve($paymentIntentId);
-			 
+			 dd($paymentIntent);
 			
 			if ($paymentIntent->status === 'requires_confirmation') {
 				$paymentIntent->confirm();
@@ -407,7 +407,7 @@ class PaymentLinksController extends Controller
         //return Excel::download(new PaymentListExport, 'payment.xlsx');
 		
 		$validated = $request->validate([
-            'range' => 'required|string|in:previous_month,this_month,this_week,yesterday,today,custom',
+            'range' => 'required|string|in:previous_month,this_month,weekly,yesterday,today,custom',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
         ]);
@@ -424,7 +424,7 @@ class PaymentLinksController extends Controller
                 $startDate = Carbon::now()->startOfMonth();
                 $endDate = Carbon::now()->endOfMonth()->endOfDay();
                 break;
-            case 'this_week':
+            case 'weekly':
                 $startDate = Carbon::now()->startOfWeek();
                 $endDate = Carbon::now()->endOfWeek()->endOfDay();
                 break;
